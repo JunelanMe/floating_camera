@@ -24,15 +24,25 @@ class FloatingCamera(QtWidgets.QWidget):
         # 用于窗口拖动的变量
         self.drag_pos = None
         # 设置窗口初始大小
-        self.resize(220, 220)
+        self.resize(220, 260)
 
         # 创建显示摄像头画面的标签
         self.label = QtWidgets.QLabel(self)
-        self.label.setGeometry(0, 0, 200, 200)
+        self.label.setGeometry(10, 10, 200, 200)
+
+        # 美颜开关，默认开
+        self.beauty_on = True
+
+        # 美颜按钮
+        self.beauty_btn = QtWidgets.QPushButton("美颜开", self)
+        self.beauty_btn.setCheckable(True)
+        self.beauty_btn.setChecked(self.beauty_on)
+        self.beauty_btn.setGeometry(10, 215, 80, 30)
+        self.beauty_btn.clicked.connect(self.toggle_beauty)
 
         # 创建关闭按钮
         self.close_btn = QtWidgets.QPushButton("×", self)
-        self.close_btn.setGeometry(190, -5, 30, 30)
+        self.close_btn.setGeometry(190, 0, 30, 30)
         # 设置关闭按钮样式
         self.close_btn.setStyleSheet("""
             QPushButton {
@@ -51,6 +61,18 @@ class FloatingCamera(QtWidgets.QWidget):
         self.close_btn.clicked.connect(self.close)  # 绑定点击事件
         self.close_btn.setVisible(False)  # 默认隐藏关闭按钮
 
+    def toggle_beauty(self):
+        self.beauty_on = not self.beauty_on
+        self.beauty_btn.setText("美颜开" if self.beauty_on else "美颜关")
+
+    def apply_beauty(self, frame):
+        """简单美颜：双边滤波磨皮 + 亮度稍微增加"""
+        # 双边滤波磨皮
+        filtered = cv2.bilateralFilter(frame, d=9, sigmaColor=75, sigmaSpace=75)
+        # 增加亮度和对比度（简单美白）
+        enhanced = cv2.addWeighted(filtered, 1.3, np.zeros_like(filtered), 0, 10)
+        return enhanced
+
     def update_frame(self):
         """更新摄像头画面"""
         ret, frame = self.cap.read()
@@ -65,12 +87,12 @@ class FloatingCamera(QtWidgets.QWidget):
         # 裁剪为正方形
         h, w, _ = frame.shape
         size = min(w, h)
+        x_offset = int(size * 0.3)  # 向右偏移20%的宽度，裁剪区域偏左
+        frame = frame[0:size, x_offset:x_offset + size]
 
-        # 修改这里：让裁剪区域偏左
-        # 原代码是 frame[0:size, 0:size] 从左上角开始裁剪
-        # 新代码让x轴起始位置向右偏移，这样裁剪区域就会偏左
-        x_offset = int(size * 0.2)  # 向右偏移20%的宽度，这样裁剪区域看起来就是偏左的
-        frame = frame[0:size, x_offset:x_offset+size]  # 修改后的裁剪区域
+        # 如果开启美颜，先做美颜处理
+        if self.beauty_on:
+            frame = self.apply_beauty(frame)
 
         # 创建RGBA图像（带透明度通道）
         rgba = np.zeros((size, size, 4), dtype=np.uint8)
@@ -85,8 +107,8 @@ class FloatingCamera(QtWidgets.QWidget):
         qimg = QtGui.QImage(rgba.data, size, size, 4 * size, QtGui.QImage.Format_RGBA8888)
         # 转换为QPixmap并缩放
         pixmap = QtGui.QPixmap.fromImage(qimg).scaled(self.label.width(), self.label.height(),
-                                                    QtCore.Qt.KeepAspectRatio,
-                                                    QtCore.Qt.SmoothTransformation)
+                                                     QtCore.Qt.KeepAspectRatio,
+                                                     QtCore.Qt.SmoothTransformation)
         self.label.setPixmap(pixmap)  # 显示图像
 
     def enterEvent(self, event):
